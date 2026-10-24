@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ansicurse"
+version = "0.1.0"
+description = "A terminal UI for browsing, editing and running Ansible playbooks"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+dependencies = [
+    "textual>=0.86",
+    "ansible-runner>=2.3",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+# Bundle ansible-core for machines that don't already have Ansible installed.
+ansible = ["ansible-core>=2.15"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+ansicurse = "ansicurse.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ansicurse"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

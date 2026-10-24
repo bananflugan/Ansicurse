@@ -1,0 +1,190 @@
+Screen {
+    layout: vertical;
+}
+
+#topbar {
+    height: 1;
+    padding: 0 1;
+    background: $boost;
+}
+
+#main {
+    height: 1fr;
+}
+
+Browser {
+    width: 42;
+    min-width: 28;
+    border: round $primary-darken-3;
+    border-title-color: $text;
+}
+
+Browser:focus-within,
+DetailPane:focus-within,
+JobsPane:focus-within {
+    border: round $accent;
+}
+
+Browser OptionList {
+    height: 1fr;
+    border: none;
+    padding: 0;
+    background: transparent;
+}
+
+Browser OptionList:focus {
+    border: none;
+}
+
+Browser #filter {
+    display: none;
+}
+
+Browser #filter.visible {
+    display: block;
+}
+
+DetailPane {
+    width: 1fr;
+    border: round $primary-darken-3;
+}
+
+#detail-title {
+    height: 1;
+    padding: 0 1;
+}
+
+#detail-tabs {
+    height: 1fr;
+}
+
+#detail-tabs TabPane {
+    padding: 0;
+}
+
+#preview-scroll,
+#outline-tree,
+#editor {
+    height: 1fr;
+}
+
+#editor {
+    border: none;
+}
+
+JobsPane {
+    height: 45%;
+    display: none;
+    border: round $primary-darken-3;
+}
+
+JobsPane.visible {
+    display: block;
+}
+
+#job-tabs {
+    height: 1fr;
+}
+
+#job-tabs TabPane {
+    padding: 0;
+}
+
+JobView RichLog {
+    height: 1fr;
+    border: none;
+    background: transparent;
+    padding: 0 1;
+}
+
+.job-summary {
+    height: auto;
+    padding: 0 1;
+    background: $boost;
+}
+
+RunDialog,
+ConfirmDialog,
+PasswordDialog {
+    align: center middle;
+}
+
+RunDialog #dialog,
+ConfirmDialog #dialog,
+PasswordDialog #dialog {
+    width: 96;
+    max-width: 100%;
+    height: auto;
+    max-height: 100%;
+    padding: 1 2;
+    border: thick $accent;
+    background: $surface;
+}
+
+ConfirmDialog #dialog,
+PasswordDialog #dialog {
+    width: 72;
+}
+
+PasswordDialog .title,
+PasswordDialog .context {
+    margin-bottom: 1;
+}
+
+RunDialog #dialog {
+    scrollbar-size-vertical: 1;
+}
+
+RunDialog .title {
+    margin-bottom: 1;
+}
+
+RunDialog .context {
+    margin-bottom: 1;
+}
+
+RunDialog .title {
+    margin-bottom: 0;
+}
+
+RunDialog .row {
+    height: auto;
+}
+
+RunDialog .field-label {
+    width: 12;
+    padding: 1 0 0 0;
+}
+
+RunDialog Input {
+    width: 1fr;
+}
+
+RunDialog Select {
+    width: 24;
+}
+
+RunDialog .checks {
+    margin-top: 1;
+}
+
+RunDialog #cmd-preview {
+    margin-top: 1;
+    padding: 0 1;
+    background: $boost;
+}
+
+RunDialog #prod-warning {
+    color: $error;
+    text-style: bold;
+}
+
+#buttons {
+    height: auto;
+    margin-top: 1;
+    align-horizontal: right;
+}
+
+#buttons Button {
+    margin-left: 2;
+}

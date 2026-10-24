@@ -1,0 +1,10 @@
+- name: Configure web servers
+  hosts: webservers
+  gather_facts: false
+  roles:
+    - motd
+  tasks:
+    - name: Pretend to deploy
+      ansible.builtin.debug:
+        msg: "Deploying to {{ inventory_hostname }}"
+      tags: [deploy]

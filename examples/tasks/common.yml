@@ -1,0 +1,4 @@
+# A task file, not a playbook: Ansicurse lists it but does not mark it as runnable.
+- name: Show the greeting
+  ansible.builtin.debug:
+    msg: "{{ greeting }} on {{ inventory_hostname }}"

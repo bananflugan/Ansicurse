@@ -1,0 +1,9 @@
+- name: Build a message of the day
+  ansible.builtin.set_fact:
+    motd: "Managed by Ansible on {{ inventory_hostname }}"
+  tags: [motd]
+
+- name: Print it
+  ansible.builtin.debug:
+    var: motd
+  tags: [motd]

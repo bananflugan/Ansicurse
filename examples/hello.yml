@@ -1,0 +1,32 @@
+- name: Say hello locally
+  hosts: local
+  gather_facts: false
+  tasks:
+    - name: Greet
+      ansible.builtin.debug:
+        msg: "{{ greeting }}"
+      tags: [greet]
+
+    - name: Read the kernel version
+      ansible.builtin.command: uname -sr
+      register: kernel
+      changed_when: false
+      tags: [info]
+
+    - name: Report a change so the run shows a yellow host
+      ansible.builtin.command: "true"
+      changed_when: true
+      tags: [change]
+
+    - name: Error handling demo
+      block:
+        - name: This fails on purpose
+          ansible.builtin.fail:
+            msg: Expected failure
+      rescue:
+        - name: Recovered
+          ansible.builtin.debug:
+            msg: The rescue section ran
+      tags: [rescue]
+
+    - ansible.builtin.import_tasks: tasks/common.yml
