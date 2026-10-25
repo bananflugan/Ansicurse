@@ -3,9 +3,22 @@
 from __future__ import annotations
 
 import argparse
+import json
+from importlib.metadata import PackageNotFoundError, distribution
 from pathlib import Path
 
 from . import __version__
+
+
+def version_text() -> str:
+    """The version, plus the commit when installed from GitHub (pipx install git+https://…)."""
+    try:
+        # pip records where a package came from, including the exact git commit.
+        direct_url = json.loads(distribution("ansicurse").read_text("direct_url.json") or "{}")
+    except (PackageNotFoundError, OSError, ValueError):
+        direct_url = {}
+    commit = (direct_url.get("vcs_info") or {}).get("commit_id")
+    return f"ansicurse {__version__} ({commit[:7]})" if commit else f"ansicurse {__version__}"
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -20,7 +33,7 @@ def main(argv: list[str] | None = None) -> None:
         type=Path,
         help="directory to start in (default: current directory)",
     )
-    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument("--version", action="version", version=version_text())
     args = parser.parse_args(argv)
 
     directory = args.directory.expanduser().resolve()

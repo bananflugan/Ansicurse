@@ -280,3 +280,24 @@ async def test_old_runs_are_deleted_when_ansicurse_starts():
         await app.workers.wait_for_complete()
         await pilot.pause()
     assert not old_log.exists()
+
+
+@pytest.mark.parametrize(
+    "direct_url, expected",
+    [
+        ('{"url": "https://github.com/bananflugan/ansicurse.git", "vcs_info": '
+         '{"vcs": "git", "commit_id": "d1c5fb3d0653bde89060596660d144ebf27901c0"}}',
+         "ansicurse 0.1.0 (d1c5fb3)"),
+        ('{"url": "file:///src/ansicurse", "dir_info": {"editable": true}}', "ansicurse 0.1.0"),
+        (None, "ansicurse 0.1.0"),  # installed from PyPI or a wheel: no direct_url.json
+    ],
+)
+def test_version_shows_the_installed_commit(monkeypatch, direct_url, expected):
+    from ansicurse import __main__
+
+    class FakeDistribution:
+        def read_text(self, name):
+            return direct_url
+
+    monkeypatch.setattr(__main__, "distribution", lambda name: FakeDistribution())
+    assert __main__.version_text() == expected
