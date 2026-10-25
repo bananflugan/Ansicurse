@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from ansicurse.project import project_info, resolve_workdir
 from ansicurse.runner import Job, RunOptions, build_args, display_command, looks_like_production
 
@@ -144,6 +146,24 @@ def test_rejected_passwords_are_detected():
     assert other.password_errors == set()
 
 
+@pytest.mark.parametrize(
+    "stdout",
+    [
+        'fatal: [web01]: FAILED! => {"msg": "Missing sudo password"}',  # over ssh
+        "sudo: a password is required",  # local connection
+    ],
+)
+def test_missing_become_password_is_detected(stdout):
+    job = Job(Path("/x/site.yml"), RunOptions(), Path("/x"))
+    job.handle_event({"event": "runner_on_failed", "event_data": {"host": "a"}, "stdout": stdout})
+    assert job.missing_passwords == {"become"}
+
+    # When we did supply one, it isn't missing.
+    supplied = Job(Path("/x/site.yml"), RunOptions(), Path("/x"), passwords={"become": "pw"})
+    supplied.handle_event({"event": "verbose", "stdout": stdout})
+    assert supplied.missing_passwords == set()
+
+
 def test_password_files_from_config_and_environment(tmp_path, monkeypatch):
     (tmp_path / "ansible.cfg").write_text(
         "[defaults]\nbecome_password_file = ~/.become_pass  # local\nvault_password_file = vault.sh\n"
@@ -184,3 +204,79 @@ def test_uses_vault(tmp_path):
     (tmp_path / "group_vars").mkdir()
     (tmp_path / "group_vars" / "all").write_text("$ANSIBLE_VAULT;1.1;AES256\n6162\n")
     assert uses_vault(tmp_path, playbook)
+
+
+def test_each_run_gets_a_flat_plain_text_log(monkeypatch):
+    from ansicurse import runner, state
+
+    monkeypatch.setattr(runner, "find_ansible_playbook", lambda: None)
+    job = Job(Path("/x/site.yml"), RunOptions(limit="web01"), Path("/x"))
+    shown = []
+    job.start(on_output=lambda j, text: shown.append(text), on_status=lambda j: None)
+
+    log = job.log_file
+    assert log.parent == state.logs_dir() == Path.home() / ".local" / "ansicurse" / "logs"
+    assert log.name.endswith(f"-{job.id}-site.log")
+    assert log.stat().st_mode & 0o777 == 0o600
+    lines = log.read_text().splitlines()
+    assert lines[0] == "$ cd /x"
+    assert lines[1] == "$ ansible-playbook --limit web01 site.yml"
+    assert lines[2] == shown[0].strip()  # the same output the runs pane shows
+    assert lines[-1].startswith("-- error, ")
+
+
+def test_log_strips_colour_codes():
+    job = Job(Path("/x/site.yml"), RunOptions(), Path("/x"))
+    job._open_log("colours")
+    job._write_log("\x1b[0;32mok: [web01]\x1b[0m\r\n")
+    job._close_log()
+    assert job.log_file.read_text().splitlines()[2] == "ok: [web01]"
+
+
+def test_runs_older_than_30_days_are_deleted():
+    import os
+    import time
+
+    from ansicurse import state
+
+    def make_run(name, days_old):
+        log = state.logs_dir() / f"{name}.log"
+        run = state.runs_dir() / name
+        (run / "artifacts").mkdir(parents=True)
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.write_text("output\n")
+        stamp = time.time() - days_old * 24 * 60 * 60
+        for path in (log, run):
+            os.utime(path, (stamp, stamp))
+        return log, run
+
+    old_log, old_run = make_run("20260901-120000-1-site", days_old=31)
+    new_log, new_run = make_run("20261020-120000-2-site", days_old=29)
+    notes = state.logs_dir() / "notes.txt"  # not ours to delete
+    notes.write_text("keep me")
+    os.utime(notes, (0, 0))
+    state.save_options({"/x/site.yml": {"limit": "web01"}})
+
+    state.delete_old_runs()
+
+    assert not old_log.exists() and not old_run.exists()
+    assert new_log.exists() and new_run.exists()
+    assert notes.exists()
+    assert state.load_options() == {"/x/site.yml": {"limit": "web01"}}
+
+
+async def test_old_runs_are_deleted_when_ansicurse_starts():
+    import os
+
+    from ansicurse import state
+    from ansicurse.app import AnsicurseApp
+
+    old_log = state.logs_dir() / "20260101-120000-1-site.log"
+    old_log.parent.mkdir(parents=True)
+    old_log.write_text("output\n")
+    os.utime(old_log, (0, 0))
+    app = AnsicurseApp(EXAMPLES)
+    async with app.run_test() as pilot:
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+    assert not old_log.exists()

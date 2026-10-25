@@ -11,12 +11,6 @@ from ansicurse.widgets.dialogs import RunDialog  # noqa: E402
 EXAMPLES = Path(__file__).parent.parent / "examples"
 
 
-@pytest.fixture(autouse=True)
-def isolated_state(tmp_path, monkeypatch):
-    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
-    monkeypatch.delenv("ANSIBLE_CONFIG", raising=False)
-
-
 async def test_browses_and_previews_playbooks():
     app = AnsicurseApp(EXAMPLES)
     async with app.run_test(size=(140, 40)) as pilot:
@@ -56,6 +50,21 @@ async def test_run_dialog_builds_command():
         assert not isinstance(app.screen, RunDialog)
 
 
+@pytest.mark.parametrize("size", [(80, 24), (110, 32)])
+async def test_run_dialog_buttons_stay_visible_on_short_terminals(size):
+    app = AnsicurseApp(EXAMPLES)
+    async with app.run_test(size=size) as pilot:
+        await pilot.pause()
+        while app.current_entry is None or app.current_entry.name != "hello.yml":
+            await pilot.press("down")
+        await pilot.press("f5")
+        await pilot.pause()
+        dialog = app.screen.query_one("#dialog")
+        assert dialog.max_scroll_y > 0  # the form itself has to scroll
+        for button in ("#run", "#cancel"):
+            assert dialog.region.contains_region(app.screen.query_one(button).region)
+
+
 def _become_project(tmp_path):
     project_dir = tmp_path / "proj"
     project_dir.mkdir()
@@ -77,8 +86,6 @@ async def _open_run_dialog(app, pilot):
 
 
 async def test_become_password_is_asked_once_and_kept_in_memory(tmp_path, monkeypatch):
-    import os
-
     from textual.widgets import Checkbox, Input
 
     from ansicurse.widgets.dialogs import PasswordDialog
@@ -111,8 +118,7 @@ async def test_become_password_is_asked_once_and_kept_in_memory(tmp_path, monkey
         assert len(launched) == 2 and launched[1]._passwords == {"become": "s3cret"}
 
         # The remembered options say "ask", but never contain the password.
-        options_file = os.path.join(os.environ["XDG_STATE_HOME"], "ansicurse", "options.json")
-        saved = open(options_file).read()
+        saved = (Path.home() / ".local" / "ansicurse" / "options.json").read_text()
         assert '"ask_become_pass": true' in saved and "s3cret" not in saved
 
         # F9 forgets it; cancelling the prompt cancels the run.
@@ -124,6 +130,57 @@ async def test_become_password_is_asked_once_and_kept_in_memory(tmp_path, monkey
         await pilot.press("escape")
         await pilot.pause()
         assert len(launched) == 2
+
+
+async def test_options_saved_before_password_support_still_ask(tmp_path):
+    from textual.widgets import Checkbox, Input
+
+    project_dir = _become_project(tmp_path)
+    app = AnsicurseApp(project_dir)
+    # Saved by a version without the ask_* options.
+    app.saved_options[str(project_dir / "site.yml")] = {"limit": "web01", "become": True}
+    async with app.run_test(size=(140, 45)) as pilot:
+        await pilot.pause()
+        await _open_run_dialog(app, pilot)
+        assert app.screen.query_one("#limit", Input).value == "web01"
+        assert app.screen.query_one("#ask_become_pass", Checkbox).value is True
+
+
+async def test_ticking_become_asks_for_the_password(tmp_path):
+    from textual.widgets import Checkbox
+
+    project_dir = _become_project(tmp_path)
+    (project_dir / "site.yml").write_text("- hosts: all\n  tasks:\n    - ansible.builtin.ping:\n")
+    app = AnsicurseApp(project_dir)
+    async with app.run_test(size=(140, 45)) as pilot:
+        await pilot.pause()
+        await _open_run_dialog(app, pilot)
+        ask = app.screen.query_one("#ask_become_pass", Checkbox)
+        assert ask.value is False  # the playbook doesn't use become
+        app.screen.query_one("#become", Checkbox).value = True
+        await pilot.pause()
+        assert ask.value is True
+
+
+async def test_missing_become_password_ticks_the_ask_for_next_time(tmp_path):
+    from textual.widgets import Checkbox
+
+    from ansicurse.runner import Job, RunOptions
+    from ansicurse.widgets.jobs import JobUpdated
+
+    project_dir = _become_project(tmp_path)
+    app = AnsicurseApp(project_dir)
+    playbook = project_dir / "site.yml"
+    app.saved_options[str(playbook)] = {"ask_become_pass": False}
+    async with app.run_test(size=(140, 45)) as pilot:
+        await pilot.pause()
+        job = Job(playbook, RunOptions(), project_dir)
+        job.handle_event({"event": "runner_on_failed", "stdout": "Missing sudo password"})
+        job.status = "failed"
+        app.post_message(JobUpdated(job))
+        await pilot.pause()
+        await _open_run_dialog(app, pilot)
+        assert app.screen.query_one("#ask_become_pass", Checkbox).value is True
 
 
 async def test_rejected_password_is_forgotten(tmp_path):

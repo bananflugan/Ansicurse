@@ -24,7 +24,9 @@ from .widgets.dialogs import ConfirmDialog, PasswordDialog, RunDialog
 from .widgets.jobs import JobOutput, JobsPane, JobUpdated
 
 # Actions that open dialogs or start work; disabled while a dialog is showing.
-MAIN_SCREEN_ACTIONS = frozenset({"run", "check", "external_edit", "toggle_runs", "next_view", "stop"})
+MAIN_SCREEN_ACTIONS = frozenset(
+    {"run", "check", "external_edit", "toggle_runs", "run_log", "next_view", "stop"}
+)
 
 
 class AnsicurseApp(App[None]):
@@ -37,6 +39,7 @@ class AnsicurseApp(App[None]):
         Binding("f4", "external_edit", "$EDITOR"),
         Binding("f5", "run", "Run"),
         Binding("f6", "toggle_runs", "Runs"),
+        Binding("f7", "run_log", "Run log"),
         Binding("f8", "stop", "Stop run"),
         Binding("f9", "forget_passwords", "Forget passwords", show=False),
         Binding("ctrl+s", "save", "Save", show=False),
@@ -62,12 +65,18 @@ class AnsicurseApp(App[None]):
         yield Footer()
 
     def on_mount(self) -> None:
+        self._delete_old_runs()
         if self.ansible_playbook is None:
             self.notify(
                 "ansible-playbook was not found on PATH. Install Ansible to run playbooks.",
                 severity="warning",
                 timeout=8,
             )
+
+    @work(thread=True, group="cleanup")
+    def _delete_old_runs(self) -> None:
+        # In a thread, so a big runs/ folder doesn't hold up the first screen.
+        state.delete_old_runs()
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         if action in MAIN_SCREEN_ACTIONS and len(self.screen_stack) > 1:
@@ -123,17 +132,18 @@ class AnsicurseApp(App[None]):
     # Running playbooks
 
     def _options_for(self, entry: Entry) -> RunOptions:
-        saved = self.saved_options.get(str(entry.path))
-        if saved:
-            return RunOptions.from_dict(saved)
         info = project_info(entry.path.parent, self.launch_dir)
-        uses_become = bool(entry.playbook and entry.playbook.uses_become)
-        return RunOptions(
+        saved = self.saved_options.get(str(entry.path), {})
+        uses_become = bool(entry.playbook and entry.playbook.uses_become) or saved.get("become", False)
+        detected = RunOptions(
             inventory=info.inventory or "",
             # Only ask when Ansible won't already read the password from a file.
             ask_become_pass=uses_become and not info.become_password_file,
             ask_vault_pass=not info.vault_password_file and uses_vault(info.workdir, entry.path),
         )
+        # Saved options win, but ones saved by an older version lack the newer keys:
+        # those keep the detected values instead of falling back to off.
+        return RunOptions.from_dict({**detected.to_dict(), **saved})
 
     def _selected_playbook(self) -> Entry | None:
         entry = self.current_entry
@@ -225,6 +235,17 @@ class AnsicurseApp(App[None]):
                         severity="warning",
                         timeout=8,
                     )
+            if "become" in job.missing_passwords:
+                # Tick "Ask become password" for next time, so the retry just works.
+                saved = self.saved_options.setdefault(str(job.playbook), {})
+                saved["ask_become_pass"] = True
+                state.save_options(self.saved_options)
+                self.notify(
+                    "The hosts wanted a sudo password, but none was given. "
+                    '"Ask become password (-K)" is now ticked for this playbook; run it again.',
+                    severity="warning",
+                    timeout=12,
+                )
 
     def action_forget_passwords(self) -> None:
         count = len(self._passwords)
@@ -241,6 +262,20 @@ class AnsicurseApp(App[None]):
 
     def action_toggle_runs(self) -> None:
         self.jobs.toggle_class("visible")
+
+    def action_run_log(self) -> None:
+        """Open the selected run's full output (ansible-runner's stdout file) in $PAGER."""
+        job = self.jobs.current_job()
+        log_file = job.log_file if job else None
+        if log_file is None or not log_file.exists():
+            self.notify("No run log to show yet.", timeout=3)
+            return
+        pager = os.environ.get("PAGER") or "less -R"
+        try:
+            with self.suspend():
+                subprocess.call([*shlex.split(pager), str(log_file)])
+        except Exception as exc:  # SuspendNotSupported, missing pager binary, ...
+            self.notify(f"Could not start pager: {exc}", severity="error")
 
     # Viewing and editing
 

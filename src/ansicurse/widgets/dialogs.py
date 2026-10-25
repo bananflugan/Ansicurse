@@ -41,7 +41,8 @@ class RunDialog(ModalScreen[RunOptions | None]):
         self.project = project
 
     def compose(self) -> ComposeResult:
-        # Scrolls when the terminal is too short to show the whole form.
+        # Scrolls when the terminal is too short to show the whole form. The buttons are
+        # docked to the bottom (see app.tcss), so they stay visible while the form scrolls.
         with VerticalScroll(id="dialog"):
             yield Label(Text.assemble("Run ", (self.entry.name, "bold green")), classes="title")
             yield Static(self._context_text(), classes="context")
@@ -134,6 +135,13 @@ class RunDialog(ModalScreen[RunOptions | None]):
     @on(Select.Changed)
     def _changed(self) -> None:
         self._refresh_preview()
+
+    @on(Checkbox.Changed, "#become")
+    def _become_changed(self, event: Checkbox.Changed) -> None:
+        # Become almost always needs a sudo password; ask for one unless Ansible reads it
+        # from a file. Unticking Become leaves the ask alone (the playbook may still set it).
+        if event.value and not self.project.become_password_file:
+            self.query_one("#ask_become_pass", Checkbox).value = True
 
     @on(Input.Submitted)
     def _submitted(self) -> None:

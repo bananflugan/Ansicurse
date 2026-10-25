@@ -1,24 +1,62 @@
-"""Persistent state: run artifacts and remembered run options."""
+"""Persistent state: run logs and remembered run options, kept in ~/.local/ansicurse."""
 
 from __future__ import annotations
 
 import json
-import os
+import shutil
+import time
 from pathlib import Path
 from typing import Any
 
+KEEP_DAYS = 30
+"""Run logs and run folders older than this are deleted when Ansicurse starts."""
 
-def state_dir() -> Path:
-    base = os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state"
-    return Path(base) / "ansicurse"
+
+def data_dir() -> Path:
+    return Path.home() / ".local" / "ansicurse"
 
 
 def runs_dir() -> Path:
-    return state_dir() / "runs"
+    """ansible-runner's working folders, one per run."""
+    return data_dir() / "runs"
+
+
+def logs_dir() -> Path:
+    """One plain-text log per run, named like its folder in runs/."""
+    return data_dir() / "logs"
+
+
+def delete_old_runs(keep_days: int = KEEP_DAYS) -> None:
+    """Delete logs and run folders last written more than keep_days ago."""
+    cutoff = time.time() - keep_days * 24 * 60 * 60
+    for path in _entries(logs_dir()):
+        try:
+            # Never follow a symlink out of our own folders.
+            if path.suffix == ".log" and not path.is_symlink() and path.is_file() and _older(path, cutoff):
+                path.unlink()
+        except OSError:
+            pass  # try again next start
+    for path in _entries(runs_dir()):
+        try:
+            if not path.is_symlink() and path.is_dir() and _older(path, cutoff):
+                shutil.rmtree(path)
+        except OSError:
+            pass
+
+
+def _entries(directory: Path) -> list[Path]:
+    try:
+        return list(directory.iterdir())
+    except OSError:
+        return []
+
+
+def _older(path: Path, cutoff: float) -> bool:
+    return path.stat().st_mtime < cutoff
 
 
 def _options_file() -> Path:
-    return state_dir() / "options.json"
+    return data_dir() / "options.json"
 
 
 def load_options() -> dict[str, dict[str, Any]]:

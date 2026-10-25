@@ -135,16 +135,12 @@ RunDialog #dialog {
     scrollbar-size-vertical: 1;
 }
 
-RunDialog .title {
-    margin-bottom: 1;
+RunDialog #buttons {
+    dock: bottom;
 }
 
 RunDialog .context {
     margin-bottom: 1;
-}
-
-RunDialog .title {
-    margin-bottom: 0;
 }
 
 RunDialog .row {

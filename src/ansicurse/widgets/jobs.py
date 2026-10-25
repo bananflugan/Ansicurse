@@ -92,9 +92,9 @@ class JobView(Vertical):
                 glyph, style = HOST_STYLES[state]
                 summary.append(f"{host} ", style="")
                 summary.append(f"{glyph}  ", style=style)
-        if job.done and job.artifact_dir:
-            artifacts = str(job.artifact_dir).replace(str(Path.home()), "~", 1)
-            summary.append(f"\nartifacts: {artifacts}", style="dim")
+        if job.done and job.log_file:
+            log_file = str(job.log_file).replace(str(Path.home()), "~", 1)
+            summary.append(f"\nlog: {log_file}  (F7 to open)", style="dim")
         self.query_one(".job-summary", Static).update(summary)
 
 

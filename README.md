@@ -104,6 +104,7 @@ It starts in the current folder. To start somewhere else, pass the folder: `ansi
 | F4, e | | Open in `$VISUAL` / `$EDITOR` |
 | Ctrl+S | editor | Save |
 | F6 | | Show or hide the runs pane |
+| F7 | | Open the selected run's log in `$PAGER` (default `less -R`) |
 | F8 | | Stop the selected run |
 | F9 | | Forget the passwords typed this session |
 | Ctrl+R | run dialog | Run |
@@ -111,7 +112,7 @@ It starts in the current folder. To start somewhere else, pass the folder: `ansi
 
 ## Become and vault passwords
 
-The run dialog has two checkboxes, **Ask become password (-K)** and **Ask vault password (-J)**. Ansicurse ticks them for you when the playbook uses `become` or when it finds vault-encrypted files next to it. When you run, it asks for each password once, in a masked prompt, and reuses it for later runs in the same project.
+The run dialog has two checkboxes, **Ask become password (-K)** and **Ask vault password (-J)**. Ansicurse ticks them for you when the playbook uses `become`, when you tick **Become (--become)**, or when it finds vault-encrypted files next to it. If a run fails because the hosts wanted a sudo password and none was given, Ansicurse ticks **Ask become password** for that playbook, so the next run asks. When you run, it asks for each password once, in a masked prompt, and reuses it for later runs in the same project.
 
 - Passwords are stored in memory only. They're never written to disk, not to `options.json` and not to the run artifacts. ansible-runner types them into Ansible's own `BECOME password:` and `Vault password:` prompts.
 - They're forgotten when you quit, or straight away with F9.
@@ -141,7 +142,12 @@ On macOS, the script could read from the keychain instead: `security find-generi
 - **Inventory:** if `ansible.cfg` sets one, Ansicurse leaves `-i` empty so Ansible uses it. Otherwise it suggests an `inventory*` or `hosts*` file it finds.
 - **Running:** jobs go through [ansible-runner](https://ansible.readthedocs.io/projects/runner/), which streams structured events. They drive the per-host status (✔ ok, ● changed, ✖ failed, ⚠ unreachable). Several runs can go at once, one tab each.
 - **Production safety:** if the inventory or limit contains `prod`, Ansicurse asks for confirmation before the run starts.
-- **State:** run artifacts go to `~/.local/state/ansicurse/runs/` (or `$XDG_STATE_HOME`). The last options used for each playbook are saved in `options.json` and pre-filled next time. ansible-runner stores the full process environment in each run's `artifacts/run/command` file, so run folders are created readable by your user only (0700).
+- **Logs and saved options:** everything Ansicurse keeps is in `~/.local/ansicurse/`:
+  - `logs/`: one plain-text log per run, such as `20261025-171852-2-site.log` (date, time, run number, playbook). It holds the command, the full output and the final status, and is written as the run goes, so `tail -f` follows it. It stays after you quit; F7 opens it.
+  - `runs/`: ansible-runner's working folder for each run, with the same name as its log. ansible-runner stores the full process environment in each run's `artifacts/run/command` file, so these folders are readable by your user only (0700), as are the logs.
+  - `options.json`: the last options used for each playbook, pre-filled next time.
+
+  Logs and run folders are kept for 30 days. Each time Ansicurse starts, it deletes the ones last written more than 30 days ago. Other files you put in these folders are left alone.
 
 
 ## Roadmap

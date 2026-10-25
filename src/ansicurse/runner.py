@@ -12,11 +12,13 @@ import threading
 from dataclasses import asdict, dataclass, fields
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, TextIO
 
 from . import state
 
 PRODUCTION_PATTERN = re.compile(r"prod", re.IGNORECASE)
+# Colour and cursor codes in Ansible's output; the log file is plain text.
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
 HOST_EVENTS = {
     "runner_on_ok": "ok",
@@ -39,6 +41,11 @@ PASSWORD_PROMPTS = {
 PASSWORD_ERRORS = {
     "become": ("incorrect sudo password", "incorrect su password", "incorrect become password"),
     "vault": ("decryption failed",),
+}
+# Output that means a host wanted a password we didn't supply: Ansible's own
+# "Missing sudo password", or sudo's "a password is required".
+MISSING_PASSWORDS = {
+    "become": re.compile(r"missing \w+ password|a password is required", re.IGNORECASE),
 }
 
 
@@ -151,14 +158,24 @@ class Job:
         self.artifact_dir: Path | None = None
         self.password_errors: set[str] = set()
         """Password kinds ("become", "vault") that Ansible rejected during this run."""
+        self.missing_passwords: set[str] = set()
+        """Password kinds the hosts asked for but this run didn't supply."""
         # Kept off the public attributes so passwords don't end up in reprs or logs.
         self._passwords = dict(passwords or {})
         self._cancel = threading.Event()
+        self._log: TextIO | None = None
+        self._log_path: Path | None = None
+        self._log_lock = threading.Lock()
 
     @property
     def title(self) -> str:
         kind = "check" if self.options.syntax_check else "run"
         return f"#{self.id} {kind} {self.playbook.name}"
+
+    @property
+    def log_file(self) -> Path | None:
+        """The run's plain-text log in logs/, written as the run goes."""
+        return self._log_path
 
     @property
     def done(self) -> bool:
@@ -203,11 +220,14 @@ class Job:
                     self.hosts[stat_host] = "skipped"
 
         stdout = event.get("stdout") or ""
-        if self._passwords and stdout:
+        if stdout:
             lowered = stdout.lower()
             for kind in self._passwords:
                 if any(marker in lowered for marker in PASSWORD_ERRORS[kind]):
                     self.password_errors.add(kind)
+            for kind, pattern in MISSING_PASSWORDS.items():
+                if kind not in self._passwords and pattern.search(stdout):
+                    self.missing_passwords.add(kind)
         return stdout
 
     def _set_host(self, host: str, state_name: str) -> None:
@@ -220,13 +240,50 @@ class Job:
         self.rc = rc
         self.finished_at = datetime.now()
 
+    def _open_log(self, name: str) -> None:
+        """Start the run's plain-text log, logs/<name>.log, readable by the user only."""
+        logs = state.logs_dir()
+        try:
+            logs.mkdir(mode=0o700, parents=True, exist_ok=True)
+            path = logs / f"{name}.log"
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            # Line buffered, so `tail -f` follows the run.
+            self._log = open(fd, "w", encoding="utf-8", buffering=1)
+        except OSError:
+            return  # the run still works, just without a log file
+        self._log_path = path
+        self._write_log(f"$ cd {self.workdir}\n$ {self.command}\n")
+
+    def _write_log(self, text: str) -> None:
+        with self._log_lock:
+            if self._log is not None:
+                self._log.write(ANSI_ESCAPE.sub("", text.replace("\r\n", "\n").replace("\r", "")))
+
+    def _close_log(self) -> None:
+        rc = "" if self.rc is None else f", rc={self.rc}"
+        finished = (self.finished_at or datetime.now()).strftime("%Y-%m-%d %H:%M:%S")
+        self._write_log(f"-- {self.status}{rc}, {self.elapsed:.0f}s, finished {finished}\n")
+        with self._log_lock:
+            if self._log is not None:
+                self._log.close()
+                self._log = None
+
     def start(self, on_output: OutputCallback, on_status: StatusCallback) -> None:
         """Start the run on a background thread. Callbacks are invoked from that thread."""
         self.started_at = datetime.now()
+        name = f"{self.started_at.strftime('%Y%m%d-%H%M%S')}-{self.id}-{self.playbook.stem}"
+        self._open_log(name)
+        caller_output = on_output
+
+        def on_output(job: Job, text: str) -> None:
+            self._write_log(text)
+            caller_output(job, text)
+
         binary = find_ansible_playbook()
         if binary is None:
             self._finish("error")
             on_output(self, "ansible-playbook not found. Install Ansible or `pip install ansicurse[ansible]`.\n")
+            self._close_log()
             on_status(self)
             return
         try:
@@ -234,11 +291,11 @@ class Job:
         except ImportError as exc:
             self._finish("error")
             on_output(self, f"Could not import ansible_runner: {exc}\n")
+            self._close_log()
             on_status(self)
             return
 
-        stamp = self.started_at.strftime("%Y%m%d-%H%M%S")
-        private_dir = state.runs_dir() / f"{stamp}-{self.id}-{self.playbook.stem}"
+        private_dir = state.runs_dir() / name
         # ansible-runner records the full process environment in artifacts/<ident>/command,
         # which can include tokens, so keep run folders private to the user.
         state.runs_dir().mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -286,6 +343,7 @@ class Job:
         except Exception as exc:  # ansible-runner raises ConfigurationError and friends
             self._finish("error")
             on_output(self, f"Failed to start ansible-runner: {exc}\n")
+            self._close_log()
             on_status(self)
             return
 
@@ -296,5 +354,6 @@ class Job:
                 status = getattr(runner, "status", None)
                 self._finish(status if status in FINAL_STATUSES else "error", getattr(runner, "rc", None))
                 on_status(self)
+            self._close_log()
 
         threading.Thread(target=watch, name=f"ansicurse-watch-{self.id}", daemon=True).start()
