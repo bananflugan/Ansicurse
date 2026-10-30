@@ -288,6 +288,12 @@ async def test_old_runs_are_deleted_when_ansicurse_starts():
         ('{"url": "https://github.com/bananflugan/ansicurse.git", "vcs_info": '
          '{"vcs": "git", "commit_id": "d1c5fb3d0653bde89060596660d144ebf27901c0"}}',
          "ansicurse 0.1.0 (d1c5fb3)"),
+        ('{"url": "https://github.com/bananflugan/ansicurse.git", "vcs_info": {"vcs": "git", '
+         '"requested_revision": "develop", "commit_id": "4103f94a0c2e1d7b9f8a6e5d4c3b2a1908f7e6d5"}}',
+         "ansicurse 0.1.0 (develop 4103f94)"),
+        ('{"url": "https://github.com/bananflugan/ansicurse.git", "vcs_info": {"vcs": "git", '
+         '"requested_revision": "4103f94", "commit_id": "4103f94a0c2e1d7b9f8a6e5d4c3b2a1908f7e6d5"}}',
+         "ansicurse 0.1.0 (4103f94)"),  # installed @<commit>: nothing to add
         ('{"url": "file:///src/ansicurse", "dir_info": {"editable": true}}', "ansicurse 0.1.0"),
         (None, "ansicurse 0.1.0"),  # installed from PyPI or a wheel: no direct_url.json
     ],

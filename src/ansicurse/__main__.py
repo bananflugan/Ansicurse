@@ -11,14 +11,21 @@ from . import __version__
 
 
 def version_text() -> str:
-    """The version, plus the commit when installed from GitHub (pipx install git+https://…)."""
+    """The version, plus the branch and commit when installed from GitHub (pipx install git+…)."""
     try:
         # pip records where a package came from, including the exact git commit.
         direct_url = json.loads(distribution("ansicurse").read_text("direct_url.json") or "{}")
     except (PackageNotFoundError, OSError, ValueError):
         direct_url = {}
-    commit = (direct_url.get("vcs_info") or {}).get("commit_id")
-    return f"ansicurse {__version__} ({commit[:7]})" if commit else f"ansicurse {__version__}"
+    vcs_info = direct_url.get("vcs_info") or {}
+    commit = vcs_info.get("commit_id")
+    if not commit:
+        return f"ansicurse {__version__}"
+    # The @branch from the install URL. Without one, pip installed the repo's default branch.
+    revision = vcs_info.get("requested_revision")
+    if revision and not commit.startswith(revision):  # @<commit> needs no repeating
+        return f"ansicurse {__version__} ({revision} {commit[:7]})"
+    return f"ansicurse {__version__} ({commit[:7]})"
 
 
 def main(argv: list[str] | None = None) -> None:
