@@ -91,6 +91,12 @@ Screen.runs-maximized JobsPane {
     height: 1fr;
 }
 
+/* F12: the view/edit pane takes the whole screen. */
+Screen.view-maximized Browser,
+Screen.view-maximized JobsPane {
+    display: none;
+}
+
 #job-tabs {
     height: 1fr;
 }

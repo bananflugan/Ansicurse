@@ -108,6 +108,7 @@ It starts in the current folder. To start somewhere else, pass the folder: `ansi
 | F8 | | Stop the selected run |
 | F9 | | Forget the passwords typed this session |
 | F10 | | Switch the runs pane between normal size and full height |
+| F12 | | Switch the Preview / Outline / Edit pane between normal size and the whole screen |
 | Ctrl+R | run dialog | Run |
 | q, Ctrl+Q | | Quit |
 

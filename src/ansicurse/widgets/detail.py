@@ -162,6 +162,12 @@ class DetailPane(Vertical):
         tabs = self.query_one("#detail-tabs", TabbedContent)
         tabs.active = TABS[(TABS.index(tabs.active) + 1) % len(TABS)] if tabs.active in TABS else TABS[0]
 
+    def focus_active_tab(self) -> None:
+        """Focus what the active tab shows, so the keys scroll or edit it."""
+        targets = {"preview": "#preview-scroll", "outline": "#outline-tree", "edit": "#editor"}
+        active = self.query_one("#detail-tabs", TabbedContent).active
+        self.query_one(targets.get(active, "#preview-scroll")).focus()
+
     def focus_editor(self) -> None:
         self.query_one("#detail-tabs", TabbedContent).active = "edit"
         self.query_one("#editor", TextArea).focus()

@@ -25,7 +25,10 @@ from .widgets.jobs import JobOutput, JobsPane, JobUpdated
 
 # Actions that open dialogs or start work; disabled while a dialog is showing.
 MAIN_SCREEN_ACTIONS = frozenset(
-    {"run", "check", "external_edit", "toggle_runs", "maximize_runs", "run_log", "next_view", "stop"}
+    {
+        "run", "check", "external_edit", "next_view", "stop",
+        "toggle_runs", "maximize_runs", "maximize_view", "run_log",
+    }
 )
 
 
@@ -42,6 +45,7 @@ class AnsicurseApp(App[None]):
         Binding("f7", "run_log", "Run log"),
         Binding("f8", "stop", "Stop run"),
         Binding("f10", "maximize_runs", "Fullscreen runs"),
+        Binding("f12", "maximize_view", "Fullscreen view"),
         Binding("f9", "forget_passwords", "Forget passwords", show=False),
         Binding("ctrl+s", "save", "Save", show=False),
         Binding("ctrl+q", "quit", "Quit"),
@@ -262,6 +266,7 @@ class AnsicurseApp(App[None]):
         self.notify(f"Stopping {job.title}…", timeout=3)
 
     def action_toggle_runs(self) -> None:
+        self.screen.remove_class("view-maximized")
         had_focus = self.jobs.has_focus_within
         self.jobs.toggle_class("visible")
         if not self.jobs.has_class("visible"):
@@ -271,6 +276,7 @@ class AnsicurseApp(App[None]):
 
     def action_maximize_runs(self) -> None:
         """Switch the runs pane between its normal size and the full height of the screen."""
+        self.screen.remove_class("view-maximized")
         maximized = self.screen.toggle_class("runs-maximized").has_class("runs-maximized")
         if maximized:
             self.jobs.add_class("visible")
@@ -279,6 +285,12 @@ class AnsicurseApp(App[None]):
                 view.query_one(RichLog).focus()
         elif self.jobs.has_focus_within:
             self.browser.query_one("#files").focus()
+
+    def action_maximize_view(self) -> None:
+        """Switch the view/edit pane between its normal size and the whole screen."""
+        self.screen.remove_class("runs-maximized")
+        if self.screen.toggle_class("view-maximized").has_class("view-maximized"):
+            self.detail.focus_active_tab()
 
     def action_run_log(self) -> None:
         """Open the selected run's full output (ansible-runner's stdout file) in $PAGER."""
@@ -297,7 +309,11 @@ class AnsicurseApp(App[None]):
     # Viewing and editing
 
     def action_next_view(self) -> None:
+        # Focus follows the tab when it was in the pane, else the old tab's widget hides with focus.
+        follow = self.detail.has_focus_within
         self.detail.cycle_tab()
+        if follow:
+            self.call_after_refresh(self.detail.focus_active_tab)
 
     def action_save(self) -> None:
         saved = self.detail.save()

@@ -264,3 +264,37 @@ async def test_f10_gives_the_runs_pane_the_whole_height():
         await pilot.press("f10")
         await pilot.pause()
         assert app.jobs.display and not app.query_one("#main").display
+
+
+async def test_f12_gives_the_view_pane_the_whole_screen():
+    from textual.widgets import Tree
+
+    app = AnsicurseApp(EXAMPLES)
+    async with app.run_test(size=(140, 40)) as pilot:
+        await pilot.pause()
+        while app.current_entry is None or app.current_entry.name != "site.yml":
+            await pilot.press("down")
+        await pilot.press("f6")  # runs pane open too
+        await pilot.pause()
+        normal = app.detail.region
+
+        await pilot.press("f12")
+        await pilot.pause()
+        assert app.detail.region.width == 140 and app.detail.region.height > normal.height
+        assert not app.browser.display and not app.jobs.display
+        assert app.detail.has_focus_within
+
+        # F3 switches tab and focus follows, since the file list isn't there to fall back on.
+        await pilot.press("f3")
+        await pilot.pause()
+        assert isinstance(app.focused, Tree)
+
+        await pilot.press("f12")
+        await pilot.pause()
+        assert app.detail.region == normal
+        assert app.browser.display and app.jobs.display
+
+        # Only one pane is fullscreen at a time.
+        await pilot.press("f12", "f10")
+        await pilot.pause()
+        assert app.screen.has_class("runs-maximized") and not app.screen.has_class("view-maximized")
