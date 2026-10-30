@@ -82,6 +82,15 @@ JobsPane.visible {
     display: block;
 }
 
+/* F10: the runs pane takes the whole height, the browser and file view step aside. */
+Screen.runs-maximized #main {
+    display: none;
+}
+
+Screen.runs-maximized JobsPane {
+    height: 1fr;
+}
+
 #job-tabs {
     height: 1fr;
 }

@@ -17,7 +17,7 @@ A terminal UI for Ansible. Browse a folder, see which files are playbooks, read 
 │ ◆ hello.yml   1 play    │  …                                       │
 │ ◆ site.yml    2 plays   │                                          │
 ├ Runs ───────────────────┴──────────────────────────────────────────┤
-│ ✔ #1 run hello.yml   localhost ●                                   │
+│ #1 run hello.yml  ✔ successful  3s  rc=0   ● 1 changed             │
 │ TASK [Greet] ok: [localhost] => { "msg": "Hello from Ansicurse" }   │
 └────────────────────────────────────────────────────────────────────┘
 ```
@@ -107,6 +107,7 @@ It starts in the current folder. To start somewhere else, pass the folder: `ansi
 | F7 | | Open the selected run's log in `$PAGER` (default `less -R`) |
 | F8 | | Stop the selected run |
 | F9 | | Forget the passwords typed this session |
+| F10 | | Switch the runs pane between normal size and full height |
 | Ctrl+R | run dialog | Run |
 | q, Ctrl+Q | | Quit |
 

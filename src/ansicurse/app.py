@@ -12,7 +12,7 @@ from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal
-from textual.widgets import Footer, Static
+from textual.widgets import Footer, RichLog, Static
 
 from . import state
 from .playbooks import Entry, EntryKind, inspect_file
@@ -25,7 +25,7 @@ from .widgets.jobs import JobOutput, JobsPane, JobUpdated
 
 # Actions that open dialogs or start work; disabled while a dialog is showing.
 MAIN_SCREEN_ACTIONS = frozenset(
-    {"run", "check", "external_edit", "toggle_runs", "run_log", "next_view", "stop"}
+    {"run", "check", "external_edit", "toggle_runs", "maximize_runs", "run_log", "next_view", "stop"}
 )
 
 
@@ -41,6 +41,7 @@ class AnsicurseApp(App[None]):
         Binding("f6", "toggle_runs", "Runs"),
         Binding("f7", "run_log", "Run log"),
         Binding("f8", "stop", "Stop run"),
+        Binding("f10", "maximize_runs", "Fullscreen runs"),
         Binding("f9", "forget_passwords", "Forget passwords", show=False),
         Binding("ctrl+s", "save", "Save", show=False),
         Binding("ctrl+q", "quit", "Quit"),
@@ -261,7 +262,23 @@ class AnsicurseApp(App[None]):
         self.notify(f"Stopping {job.title}…", timeout=3)
 
     def action_toggle_runs(self) -> None:
+        had_focus = self.jobs.has_focus_within
         self.jobs.toggle_class("visible")
+        if not self.jobs.has_class("visible"):
+            self.screen.remove_class("runs-maximized")
+            if had_focus:
+                self.browser.query_one("#files").focus()
+
+    def action_maximize_runs(self) -> None:
+        """Switch the runs pane between its normal size and the full height of the screen."""
+        maximized = self.screen.toggle_class("runs-maximized").has_class("runs-maximized")
+        if maximized:
+            self.jobs.add_class("visible")
+            # So the arrow keys and PgUp scroll the output straight away.
+            if (view := self.jobs.current_view()) is not None:
+                view.query_one(RichLog).focus()
+        elif self.jobs.has_focus_within:
+            self.browser.query_one("#files").focus()
 
     def action_run_log(self) -> None:
         """Open the selected run's full output (ansible-runner's stdout file) in $PAGER."""

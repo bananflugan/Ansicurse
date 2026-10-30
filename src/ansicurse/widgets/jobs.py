@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+from collections import Counter
 from pathlib import Path
 
 from rich.text import Text
@@ -49,6 +51,11 @@ class JobUpdated(Message):
         self.job = job
 
 
+def _natural_key(name: str) -> list[int | str]:
+    """Sort web2 before web10."""
+    return [int(part) if part.isdigit() else part for part in re.split(r"(\d+)", name)]
+
+
 def status_text(job: Job) -> Text:
     glyph, style = STATUS_STYLES.get(job.status, ("?", ""))
     return Text(f"{glyph} {job.status}", style=style)
@@ -58,6 +65,7 @@ class JobView(Vertical):
     def __init__(self, job: Job, **kwargs) -> None:
         super().__init__(**kwargs)
         self.job = job
+        self._finished = False
 
     def compose(self) -> ComposeResult:
         yield Static(classes="job-summary")
@@ -81,21 +89,38 @@ class JobView(Vertical):
         self.query_one(RichLog).write(Text.from_ansi(text.rstrip("\n")))
 
     def refresh_summary(self) -> None:
+        # One line whatever the number of hosts, so the output below keeps its room. Host
+        # names and the log path go into the output instead: see finish().
         job = self.job
         summary = Text.assemble((job.title, "bold"), "  ", status_text(job))
         summary.append(f"  {job.elapsed:.0f}s", style="dim")
         if job.rc is not None:
             summary.append(f"  rc={job.rc}", style="dim")
-        if job.hosts:
-            summary.append("   ")
-            for host, state in sorted(job.hosts.items()):
-                glyph, style = HOST_STYLES[state]
-                summary.append(f"{host} ", style="")
-                summary.append(f"{glyph}  ", style=style)
-        if job.done and job.log_file:
-            log_file = str(job.log_file).replace(str(Path.home()), "~", 1)
-            summary.append(f"\nlog: {log_file}  (F7 to open)", style="dim")
+        counts = Counter(job.hosts.values())
+        if counts:
+            summary.append("  ")
+            for state, (glyph, style) in HOST_STYLES.items():
+                if counts[state]:
+                    summary.append(f"  {glyph} {counts[state]} {state}", style=style)
         self.query_one(".job-summary", Static).update(summary)
+
+    def finish(self) -> None:
+        """Once the run is done, end the output with the hosts that need attention and the log path."""
+        if self._finished:
+            return
+        self._finished = True
+        log = self.query_one(RichLog)
+        for state in ("failed", "unreachable"):
+            hosts = sorted(
+                (host for host, host_state in self.job.hosts.items() if host_state == state),
+                key=_natural_key,
+            )
+            if hosts:
+                glyph, style = HOST_STYLES[state]
+                log.write(Text.assemble((f"{glyph} {state} ({len(hosts)}): ", f"bold {style}"), ", ".join(hosts)))
+        if self.job.log_file:
+            log_file = str(self.job.log_file).replace(str(Path.home()), "~", 1)
+            log.write(Text(f"log: {log_file}  (F7 to open)", style="dim"))
 
 
 class JobsPane(Vertical):
@@ -131,6 +156,10 @@ class JobsPane(Vertical):
             return None
         return self.jobs.get(int(active.removeprefix("job-")))
 
+    def current_view(self) -> JobView | None:
+        job = self.current_job()
+        return self.view_for(job) if job else None
+
     def running_jobs(self) -> list[Job]:
         return [job for job in self.jobs.values() if not job.done]
 
@@ -144,6 +173,8 @@ class JobsPane(Vertical):
         view = self.view_for(job)
         if view is not None:
             view.refresh_summary()
+            if job.done:
+                view.finish()
         tabs = self.query_one("#job-tabs", TabbedContent)
         try:
             tabs.get_tab(self._pane_id(job)).label = self._tab_label(job)

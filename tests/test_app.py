@@ -199,3 +199,68 @@ async def test_rejected_password_is_forgotten(tmp_path):
         app.post_message(JobUpdated(job))
         await pilot.pause()
         assert app._passwords == {}
+
+
+async def test_run_summary_stays_small_and_lists_problem_hosts_once(tmp_path):
+    from textual.widgets import RichLog
+
+    from ansicurse.runner import Job, RunOptions
+    from ansicurse.widgets.jobs import JobUpdated
+
+    app = AnsicurseApp(EXAMPLES)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        job = Job(EXAMPLES / "hello.yml", RunOptions(), EXAMPLES)
+        await app.jobs.add_job(job)
+        await pilot.pause()  # RichLog holds writes back until it knows its size
+        for i in range(100):
+            job.hosts[f"web{i}"] = "ok"
+        job.hosts.update({"web10": "failed", "web2": "failed", "db1": "unreachable"})
+        job.status, job.rc = "failed", 4
+        job._log_path = Path.home() / ".local" / "ansicurse" / "logs" / "20261030-120000-1-hello.log"
+        app.post_message(JobUpdated(job))
+        app.post_message(JobUpdated(job))  # ansible-runner can report the end twice
+        await pilot.pause()
+
+        summary = str(app.jobs.query_one(".job-summary").render())
+        assert "98 ok" in summary and "2 failed" in summary and "1 unreachable" in summary
+        assert "web50" not in summary
+        assert app.jobs.query_one(".job-summary").region.height == 1
+
+        lines = [strip.text for strip in app.jobs.query_one(RichLog).lines]
+        assert [line for line in lines if "failed (" in line] == ["✖ failed (2): web2, web10"]
+        assert [line for line in lines if "unreachable (" in line] == ["⚠ unreachable (1): db1"]
+        assert lines[-1].startswith("log: ~/.local/ansicurse/logs/20261030-120000-1-hello.log")
+
+
+async def test_f10_gives_the_runs_pane_the_whole_height():
+    from textual.widgets import RichLog
+
+    from ansicurse.runner import Job, RunOptions
+
+    app = AnsicurseApp(EXAMPLES)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        await app.jobs.add_job(Job(EXAMPLES / "hello.yml", RunOptions(), EXAMPLES))
+        await pilot.pause()
+        normal = app.jobs.region.height
+
+        await pilot.press("f10")
+        await pilot.pause()
+        assert app.jobs.region.height > normal * 1.5
+        assert not app.query_one("#main").display
+        assert isinstance(app.focused, RichLog)  # arrow keys scroll the output right away
+
+        await pilot.press("f10")
+        await pilot.pause()
+        assert app.jobs.region.height == normal
+        assert app.focused is app.browser.query_one("#files")
+
+        # F6 hides the pane, also when it was maximized; F10 brings it back big.
+        await pilot.press("f10", "f6")
+        await pilot.pause()
+        assert not app.jobs.display and app.query_one("#main").display
+        assert app.focused is app.browser.query_one("#files")
+        await pilot.press("f10")
+        await pilot.pause()
+        assert app.jobs.display and not app.query_one("#main").display
